@@ -53,7 +53,7 @@ Topics in this section will help you get started with ExecuTorch.
      .. grid-item-card:: :octicon:`file-code;1em`
         Getting started with ExecuTorch
         :img-top: _static/img/card-background.svg
-        :link: getting-started-setup.html
+        :link: getting-started.html
         :link-type: url
 
         A step-by-step tutorial on how to get started with
