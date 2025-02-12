@@ -1,3 +1,3 @@
 # MPS Backend
 
-Placeholder
+```{include} ../../backends/apple/mps/setup.md
