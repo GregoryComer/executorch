@@ -79,6 +79,8 @@ input_tensor = torch.randn(1,3,128,128)
 program = runtime.load_program("/path/to/mode.pte")
 method = program.load_method("forward")
 outputs = method.execute([input_tensor])
+
+class_logits = outputs[0]
 ```
 
 
