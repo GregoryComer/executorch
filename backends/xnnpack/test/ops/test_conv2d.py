@@ -222,10 +222,15 @@ class TestConv2d(unittest.TestCase):
         dtype: torch.dtype = torch.float,
         check_quantized=True,
         delegated=True,
+        channels_last=False,
     ):
+        inputs = m.get_inputs()
+        if channels_last:
+            inputs = tuple(x.to(memory_format=torch.channels_last) for x in inputs)
+
         # pyre-fixme[29]: `Union[torch._tensor.Tensor,
         #  torch.nn.modules.module.Module]` is not a function.
-        tester = Tester(m.eval(), m.get_inputs())
+        tester = Tester(m.eval(), inputs)
 
         if quant_config is not None:
             tester = tester.quantize(Quantize(quantization_config=quant_config))
@@ -306,6 +311,13 @@ class TestConv2d(unittest.TestCase):
         for transpose in (True, False):
             for has_bias in (True, False):
                 self._test(Conv2d(bias=has_bias, transpose=transpose))
+
+    def test_fp32_conv2d_channels_last(self) -> None:
+        for transpose in (True, False):
+            for has_bias in (True, False):
+                self._test(
+                    Conv2d(bias=has_bias, transpose=transpose), channels_last=True
+                )
 
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):
