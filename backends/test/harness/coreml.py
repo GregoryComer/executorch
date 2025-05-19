@@ -15,12 +15,10 @@ from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
-from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
-    DuplicateDynamicQuantChainPass,
-)
-from executorch.backends.xnnpack._passes import XNNPACKPassManager
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.test.harness.tester import TesterBase
+from executorch.backends.xnnpack.test.tester.tester import Stage
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -46,13 +44,6 @@ except ImportError as e:
     logger.warning(f"{e=}")
     pass
 
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
-    QuantizationConfig,
-)
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -151,7 +142,7 @@ class Quantize(Stage):
         calibrate: bool = True,
         calibration_samples: Optional[Sequence[Any]] = None,
     ):
-        self.quantizer = quantizer or XNNPACKQuantizer()
+        self.quantizer = quantizer or CoreMLQuantizer()
         self.quantization_config = (
             quantization_config or get_symmetric_quantization_config()
         )
@@ -165,6 +156,7 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
+        raise NotImplementedError()
         assert inputs is not None
         captured_graph = export_for_training(artifact, inputs, strict=True).module()
 
@@ -224,7 +216,7 @@ class Export(Stage):
 class ToEdge(Stage):
     def __init__(self, edge_compile_config: Optional[EdgeCompileConfig] = None):
         self.edge_compile_conf = (
-            edge_compile_config or get_xnnpack_edge_compile_config()
+            edge_compile_config
         )
         self.edge_dialect_program = None
 
@@ -256,6 +248,7 @@ class RunPasses(Stage):
     def run(
         self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
     ) -> None:
+        raise NotImplementedError()
         if isinstance(artifact, EdgeProgramManager):
             self.edge_or_aten_program = artifact
             if self.pass_list:
@@ -304,9 +297,9 @@ class ToEdgeTransformAndLower(Stage):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
     ):
-        self.partitioners = partitioners if partitioners is not None else [XnnpackPartitioner()]
+        self.partitioners = partitioners or [CoreMLPartitioner()]
         self.edge_compile_conf = (
-            edge_compile_config or get_xnnpack_edge_compile_config()
+            edge_compile_config
         )
         self.edge_dialect_program = None
 
@@ -329,7 +322,7 @@ class ToEdgeTransformAndLower(Stage):
 @register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
-        self.partitioner = partitioner or XnnpackPartitioner()
+        self.partitioner = partitioner or CoreMLPartitioner()
         self.delegate_module = None
 
     def run(self, artifact: EdgeProgramManager, inputs=None):
@@ -688,7 +681,7 @@ class Tester:
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
-        the XNNPACK's backend, we relax the detal such that absolute tolerance is 1e-3. and
+        the backend, we relax the detal such that absolute tolerance is 1e-3. and
         relative tolerance is 1e-3. In the event that the computation was quantized, we
         further relax the tolerance to one quantized step (equal to the quantization scale).
         This allows the quantized value to differ by 1 between the reference and model output.
@@ -711,15 +704,13 @@ class Tester:
                 f"Output {i} does not match reference output.\n"
                 f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                 f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
+                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
                 f"\t-- Model vs. Reference --\n"
                 f"\t Numel: {model.numel()}, {ref.numel()}\n"
                 f"\tMedian: {model.median()}, {ref.median()}\n"
-                f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
+                f"\t  Mean: {model.mean()}, {ref.mean()}\n"
                 f"\t   Max: {model.max()}, {ref.max()}\n"
                 f"\t   Min: {model.min()}, {ref.min()}\n"
-                f"\t   Model: {model}\n"
-                f"\t   Ref:   {ref}\n"
             )
 
     @staticmethod
@@ -799,3 +790,4 @@ class Tester:
 
         output = program.module()(*inputs)
         return output, scale
+
