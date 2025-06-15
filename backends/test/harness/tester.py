@@ -295,7 +295,6 @@ class Tester:
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
             input_shapes = [generated_input.shape for generated_input in inputs_to_run]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
-            print(f"Inputs: {inputs_to_run}")
 
             # Reference output (and quantization scale)
             (
@@ -339,11 +338,6 @@ class Tester:
                     f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
                 )
             else:
-                print(
-                    f"\t   Actual: {model}\n",
-                    f"\t   Ref:    {ref}\n"
-                    f"\t   Error:  {model-ref}\n"
-                )
                 assert torch.allclose(
                     model,
                     ref,
