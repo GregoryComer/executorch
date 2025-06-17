@@ -28,6 +28,18 @@ target_include_directories(
 )
 target_compile_options(extension_flat_tensor PUBLIC ${_common_compile_options})
 
+list(TRANSFORM _extension_flat_tensor_serialize__srcs PREPEND "${EXECUTORCH_ROOT}/")
+add_library(extension_flat_tensor_serialize ${_extension_flat_tensor_serialize__srcs})
+target_link_libraries(extension_flat_tensor_serialize extension_flat_tensor)
+target_include_directories(
+  extension_flat_tensor_serialize
+  PUBLIC ${EXECUTORCH_ROOT}/..
+         "${CMAKE_BINARY_DIR}/extension/flat_tensor/include"
+         "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+         ${_common_include_directories}
+)
+target_compile_options(extension_flat_tensor PUBLIC ${_common_compile_options})
+
 # Install libraries
 install(
   TARGETS extension_flat_tensor
