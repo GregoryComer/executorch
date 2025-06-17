@@ -48,6 +48,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
+
 # MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
@@ -733,3 +736,6 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 include(Test.cmake)
+
+# TODO
+add_subdirectory(backends/test/runner)
