@@ -73,6 +73,20 @@
       }
     },
     {
+      "name": "windows",
+      "displayName": "Build ExecuTorch for Windows",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Windows",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/windows.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Windows"
+      }
+    },
+    {
       "name": "pybind",
       "displayName": "Build pybindings exported in the wheel",
       "inherits": ["common"],
