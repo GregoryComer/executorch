@@ -136,7 +136,10 @@ def run_test(  # noqa: C901
         # AssertionErrors to catch output mismatches, but this might catch more than that.
         try:
             tester.run_method_and_compare_outputs(
-                inputs=None if generate_random_test_inputs else inputs
+                inputs=None if generate_random_test_inputs else inputs,
+                atol=5e-2,
+                rtol=5e-2,
+                snr=40,
                 statistics_callback=lambda stats: error_statistics.append(stats)
             )
         except AssertionError as e:

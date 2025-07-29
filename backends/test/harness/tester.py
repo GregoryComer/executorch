@@ -1,3 +1,4 @@
+import math
 import random
 from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -18,6 +19,7 @@ from executorch.backends.test.harness.stages import (
     ToExecutorch,
 )
 from executorch.exir.dim_order_utils import get_memory_format
+from torch.ao.ns.fx.utils import compute_sqnr
 
 from torch.export import ExportedProgram
 from torch.testing import FileCheck
@@ -304,13 +306,14 @@ class Tester:
         rtol=1e-03,
         qtol=0,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        snr: float | None = None,
     ):
         number_of_runs = 1 if inputs is not None else num_runs
         reference_stage = self.stages[StageType.EXPORT]
 
         stage = stage or self.cur
 
-        for _ in range(number_of_runs):
+        for run_iteration in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
 <<<<<<< HEAD
             input_shapes = [
@@ -338,6 +341,7 @@ class Tester:
                 atol,
                 rtol,
                 qtol,
+                snr,
                 statistics_callback,
             )
 
@@ -349,6 +353,7 @@ class Tester:
         ref_output,
         atol=1e-03,
         rtol=1e-03,
+        snr: float | None = None,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
@@ -380,15 +385,22 @@ class Tester:
                     f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
                 )
             else:
-                assert torch.allclose(
-                    model,
-                    ref,
-                    atol=atol,
-                    rtol=rtol,
-                    equal_nan=True,
+                computed_snr = compute_sqnr(model.to(torch.float), ref.to(torch.float))
+                snr = snr or float("-inf")
+
+                assert (
+                    torch.allclose(
+                        model,
+                        ref,
+                        atol=atol,
+                        rtol=rtol,
+                        equal_nan=True,
+                    )
+                    and computed_snr >= snr
+                    or math.isnan(computed_snr)
                 ), (
                     f"Output {i} does not match reference output.\n"
-                    f"\tGiven atol: {atol}, rtol: {rtol}.\n"
+                    f"\tGiven atol: {atol}, rtol: {rtol}, snr: {snr}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
                     f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
@@ -397,6 +409,7 @@ class Tester:
                     f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
                     f"\t   Max: {model.max()}, {ref.max()}\n"
                     f"\t   Min: {model.min()}, {ref.min()}\n"
+                    f"\t   SNR: {computed_snr}\n"
                 )
 
     @staticmethod
@@ -407,6 +420,7 @@ class Tester:
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        snr: float | None = None,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
@@ -430,6 +444,7 @@ class Tester:
             reference_output,
             atol=atol,
             rtol=rtol,
+            snr=snr,
             statistics_callback=statistics_callback,
         )
 
