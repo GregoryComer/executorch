@@ -56,7 +56,7 @@ class TestResult(IntEnum):
         return self in {TestResult.SUCCESS, TestResult.SUCCESS_UNDELEGATED}
 
     def is_non_backend_failure(self):
-        return self in {TestResult.EAGER_FAIL, TestResult.EAGER_FAIL}
+        return self in {TestResult.EXPORT_FAIL, TestResult.EAGER_FAIL, TestResult.UNKNOWN_FAIL}
 
     def is_backend_failure(self):
         return not self.is_success() and not self.is_non_backend_failure()
@@ -302,6 +302,7 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Undelegated Nodes",
             "Delegated Ops",
             "Undelegated Ops",
+            "Error",
         ]
     )
 
@@ -336,5 +337,6 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
         row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
         row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
-
+        row["Error"] = str(record.error) if record.error is not None else ""
+        
         writer.writerow(row)

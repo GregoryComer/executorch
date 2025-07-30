@@ -1,8 +1,9 @@
-import math
 import random
 from collections import Counter, OrderedDict
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import math
 import torch
 
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
@@ -313,16 +314,14 @@ class Tester:
 
         stage = stage or self.cur
 
+        print(f"Comparing Stage {stage} with Stage {reference_stage}")
         for run_iteration in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-<<<<<<< HEAD
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else None
                 for generated_input in inputs_to_run
             ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
-=======
->>>>>>> 6e4c57717 ([Backend Tester] Add tensor error statistic reporting)
 
             # Reference output (and quantization scale)
             (
@@ -365,12 +364,12 @@ class Tester:
         This allows the quantized value to differ by 1 between the reference and model output.
         """
 
-        assert len(model_output) == len(ref_output)
+        assert len(model_output) == len(ref_output), f"Number of model outputs ({len(model_output)}) differs from reference ({len(ref_output)})."
 
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
-
+            
             error_stats = ErrorStatistics.from_tensors(model, ref)
             if statistics_callback is not None:
                 statistics_callback(error_stats)
@@ -379,38 +378,37 @@ class Tester:
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
             if model.dtype == torch.bool:
-                assert torch.equal(model, ref), (
-                    f"Output {i} (bool tensor) does not match reference output.\n"
-                    f"\tShape: {model.shape}\n"
-                    f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
-                )
+                if not torch.equal(model, ref):
+                    raise OutputMismatchError(
+                        f"Output {i} (bool tensor) does not match reference output.\n"
+                        f"\tShape: {model.shape}\n"
+                        f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n",
+                        error_stats
+                    )
             else:
                 computed_snr = compute_sqnr(model.to(torch.float), ref.to(torch.float))
                 snr = snr or float("-inf")
 
-                assert (
-                    torch.allclose(
-                        model,
-                        ref,
-                        atol=atol,
-                        rtol=rtol,
-                        equal_nan=True,
+                if not torch.allclose(
+                    model,
+                    ref,
+                    atol=atol,
+                    rtol=rtol,
+                    equal_nan=True,
+                ) and (computed_snr >= snr or math.isnan(computed_snr)): 
+                    raise OutputMismatchError(
+                        f"Output {i} does not match reference output.\n"
+                        f"\tGiven atol: {atol}, rtol: {rtol}.\n"
+                        f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
+                        f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
+                        f"\t-- Model vs. Reference --\n"
+                        f"\t Numel: {model.numel()}, {ref.numel()}\n"
+                        f"\tMedian: {model.median()}, {ref.median()}\n"
+                        f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
+                        f"\t   Max: {model.max()}, {ref.max()}\n"
+                        f"\t   Min: {model.min()}, {ref.min()}\n",
+                        error_stats,
                     )
-                    and computed_snr >= snr
-                    or math.isnan(computed_snr)
-                ), (
-                    f"Output {i} does not match reference output.\n"
-                    f"\tGiven atol: {atol}, rtol: {rtol}, snr: {snr}.\n"
-                    f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
-                    f"\t-- Model vs. Reference --\n"
-                    f"\t Numel: {model.numel()}, {ref.numel()}\n"
-                    f"\tMedian: {model.median()}, {ref.median()}\n"
-                    f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
-                    f"\t   Max: {model.max()}, {ref.max()}\n"
-                    f"\t   Min: {model.min()}, {ref.min()}\n"
-                    f"\t   SNR: {computed_snr}\n"
-                )
 
     @staticmethod
     def _compare_outputs(

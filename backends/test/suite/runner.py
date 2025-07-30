@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 
-from executorch.backends.test.harness.error_statistics import ErrorStatistics
+from executorch.backends.test.harness import OutputMismatchError, LoadModelError, RunModelError, ErrorStatistics
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
 from executorch.backends.test.suite.flow import TestFlow
@@ -29,6 +29,13 @@ from executorch.exir import EdgeProgramManager
 NAMED_SUITES = {
     "models": "executorch.backends.test.suite.models",
     "operators": "executorch.backends.test.suite.operators",
+}
+
+# A set of operators missing portable kernels. If a test program contains any of
+# these operators post-delegation, it will fail to load for reasons unrelated to
+# the backend.
+UNSUPPORTED_PORTABLE_OPS = {
+    
 }
 
 
@@ -142,10 +149,14 @@ def run_test(  # noqa: C901
                 snr=40,
                 statistics_callback=lambda stats: error_statistics.append(stats)
             )
-        except AssertionError as e:
+        except OutputMismatchError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
-        except Exception as e:
+        except LoadModelError as e:
+            return build_result(TestResult.PTE_LOAD_FAIL, e)
+        except RunModelError as e:
             return build_result(TestResult.PTE_RUN_FAIL, e)
+        except Exception as e:
+            return build_result(TestResult.UNKNOWN_FAIL, e)
     else:
         return build_result(TestResult.SUCCESS_UNDELEGATED)
 

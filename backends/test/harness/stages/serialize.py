@@ -3,6 +3,7 @@ import logging
 
 from typing import Optional
 
+from executorch.backends.test.harness.errors import LoadModelError, RunModelError
 from executorch.backends.test.harness.stages.stage import Stage, StageType
 from executorch.exir import ExecutorchProgramManager
 
@@ -39,11 +40,18 @@ class Serialize(Stage):
 
     def run_artifact(self, inputs):
         inputs_flattened, _ = tree_flatten(inputs)
-        executorch_module = _load_for_executorch_from_buffer(self.buffer)
-        executorch_output = copy.deepcopy(
-            executorch_module.run_method("forward", tuple(inputs_flattened))
-        )
-        return executorch_output
+        try:
+            executorch_module = _load_for_executorch_from_buffer(self.buffer)
+        except Exception as e:
+            raise LoadModelError("Failed to load model.") from e
+        
+        try:
+            executorch_output = copy.deepcopy(
+                executorch_module.run_method("forward", tuple(inputs_flattened))
+            )
+            return executorch_output
+        except Exception as e:
+            raise RunModelError("Failed to run model.") from e
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         """

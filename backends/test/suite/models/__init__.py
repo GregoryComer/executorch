@@ -106,6 +106,7 @@ def run_model_test(
     flow: TestFlow,
     dtype: torch.dtype,
     dynamic_shapes: Any | None,
+    generate_random_test_inputs: bool = True,
 ):
     model = model.to(dtype)
     context = get_active_test_context()
@@ -121,6 +122,7 @@ def run_model_test(
         context.test_base_name,
         context.params,
         dynamic_shapes=dynamic_shapes,
+        generate_random_test_inputs=generate_random_test_inputs,
     )
 
     log_test_summary(run_summary)
@@ -130,6 +132,7 @@ def run_model_test(
             raise RuntimeError("Test failure.") from run_summary.error
         else:
             # Non-backend failure indicates a bad test. Mark as skipped.
-            raise unittest.SkipTest(
-                f"Test failed for reasons other than backend failure. Error: {run_summary.error}"
-            )
+            #raise unittest.SkipTest(
+            #    f"Test failed for reasons other than backend failure. Error: {run_summary.error}"
+            #)
+            raise run_summary.error
