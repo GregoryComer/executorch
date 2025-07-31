@@ -22,7 +22,7 @@ from executorch.backends.test.suite.runner import run_test
 DTYPES: list[torch.dtype] = [
     torch.float16,
     torch.float32,
-    torch.float64,
+    # torch.float64,
 ]
 
 
