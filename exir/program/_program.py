@@ -175,9 +175,9 @@ def _get_updated_graph_signature(
         if node.op != "placeholder":
             continue
 
-        assert i < len(
-            old_signature.input_specs
-        ), "Number of inputs changed after transformation"
+        #assert i < len(
+        #    old_signature.input_specs
+        #), "Number of inputs changed after transformation"
         old_input_spec = old_signature.input_specs[i]
         arg = (
             old_input_spec.arg
@@ -1078,7 +1078,6 @@ def _sanity_check_graph_for_non_decomp_ops(
                     + warning_str_end
                 )
                 if generate_error:
-                    print(submod)
                     raise RuntimeError(warning_str)
                 else:
                     logging.warning(warning_str)

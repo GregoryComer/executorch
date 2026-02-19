@@ -703,8 +703,6 @@ def create_exported_program_from_submodule(
             been consumed by the delegate (buffer mutation nodes) and should be
             removed from the toplevel ExportedProgram.
     """
-    # Arrange the submodule's placeholders in order
-    submodule = arrange_graph_placeholders(submodule, owning_program, tag)
 
     # TODO: we probably need to arrange the outputs wrt buffer mutations.
 
@@ -764,7 +762,12 @@ def create_submodule_from_nodes(
         The submodule that has been partitioned, the call_module node in the
         toplevel graph module calling the submodule
     """
-    sorted_nodes = topo_sort(node_list)
+
+    # Exclude placeholders from the submodule to leave in the outer graph.
+    # They'll get new placeholders from fuse_as_graphmodule.
+    filtered_node_list = [n for n in node_list if n.op != "placeholder"]
+
+    sorted_nodes = topo_sort(filtered_node_list)
 
     submodule_name = "fused_" + tag
     sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(

@@ -17,9 +17,14 @@ from torch.export.graph_signature import InputSpec
 from torch.fx import GraphModule, Node
 from typing import Any, Sequence
 
+# Key for node.meta dict.
 INPUT_SPEC_KEY = "input_spec"
 
 def propagate_input_spec(ep: ExportedProgram) -> ExportedProgram:
+    """
+    Assign the meta["input_spec"] value for placeholders in the graph, including
+    placeholder nodes in control flow submodules.
+    """
     inputs = {
         s.arg.name: s for s in ep.graph_signature.input_specs
     }
@@ -68,11 +73,13 @@ def _update_placeholder_meta(node: Node, inputs: dict[str, InputSpec]) -> None:
 
     if spec is not None:
         # If this corresponds to a EP input and the node isn't already tagged,
-        # set it. If there is a conflict, default to not tagging.
+        # set it. If the metadata matches, leave it alone. If there is a mismatch,
+        # leave it untagged - i.e. treat as a runtime tensor. 
         if existing_meta is None:
             node.meta[INPUT_SPEC_KEY] = spec
-        else:
+        elif existing_meta != spec:
             node.meta.pop(INPUT_SPEC_KEY, None)
+        # else: existing_meta == spec, leave it alone.
     else:
         # Not an EP input.
         node.meta.pop(INPUT_SPEC_KEY, None)

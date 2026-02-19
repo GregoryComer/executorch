@@ -13,18 +13,14 @@ from functools import singledispatch
 from typing import Dict, Generator, List, Mapping
 
 import torch
-
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.utils import (
     _maybe_duplicate_constant_nodes,
     is_identical_graph,
 )
-
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
-
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
     _unsafe_adjust_original_program,
@@ -32,6 +28,7 @@ from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
     LoweredBackendModule,
 )
+from executorch.exir.passes import remove_unused_parameters_pass
 from executorch.exir.program._fake_program import (
     get_fake_program,
     update_to_real_program,
@@ -254,7 +251,7 @@ def _insert_lowered_submodule(
         _unsafe_adjust_original_program(
             owning_program,
             call_delegate_node,
-            toplevel_input_specs_to_delete,
+            {},
             toplevel_output_specs_to_delete,
         )
 
@@ -432,17 +429,21 @@ def _(
     for node in tagged_graph_module.graph.nodes:
         node.meta.pop("delegation_tag", None)
 
-    return ExportedProgram(
-        root=tagged_graph_module,
-        graph=tagged_graph_module.graph,
-        graph_signature=tagged_exported_program.graph_signature,
-        state_dict=tagged_exported_program.state_dict,
-        range_constraints=copy.deepcopy(tagged_exported_program.range_constraints),
-        module_call_graph=copy.deepcopy(tagged_exported_program.module_call_graph),
-        example_inputs=None,
-        constants=tagged_exported_program.constants,
-        verifiers=[tagged_exported_program.verifier],
+    # Clean up unused parameters after delegation
+    lowered_program = remove_unused_parameters_pass(
+        ExportedProgram(
+            root=tagged_graph_module,
+            graph=tagged_graph_module.graph,
+            graph_signature=tagged_exported_program.graph_signature,
+            state_dict=tagged_exported_program.state_dict,
+            range_constraints=copy.deepcopy(tagged_exported_program.range_constraints),
+            module_call_graph=copy.deepcopy(tagged_exported_program.module_call_graph),
+            example_inputs=None,
+            constants=tagged_exported_program.constants,
+            verifiers=[tagged_exported_program.verifier],
+        )
     )
+    return lowered_program
 
 
 def _create_partitions_in_graph_module(
@@ -770,21 +771,25 @@ def _(
             tagged_exported_program = method_to_tagged_exported_program[method_name]
             tagged_exported_program._validate()
             remove_used_metadata(tagged_exported_program.graph_module.graph)
-            partitioned_and_lowered_exported_programs[method_name] = ExportedProgram(
-                root=tagged_exported_program.graph_module,
-                graph=tagged_exported_program.graph_module.graph,
-                graph_signature=tagged_exported_program.graph_signature,
-                state_dict=tagged_exported_program.state_dict,
-                range_constraints=copy.deepcopy(
-                    tagged_exported_program.range_constraints
-                ),
-                module_call_graph=copy.deepcopy(
-                    tagged_exported_program.module_call_graph
-                ),
-                example_inputs=None,
-                constants=tagged_exported_program.constants,
-                verifiers=[tagged_exported_program.verifier],
+            # Clean up unused parameters after delegation
+            lowered_program = remove_unused_parameters_pass(
+                ExportedProgram(
+                    root=tagged_exported_program.graph_module,
+                    graph=tagged_exported_program.graph_module.graph,
+                    graph_signature=tagged_exported_program.graph_signature,
+                    state_dict=tagged_exported_program.state_dict,
+                    range_constraints=copy.deepcopy(
+                        tagged_exported_program.range_constraints
+                    ),
+                    module_call_graph=copy.deepcopy(
+                        tagged_exported_program.module_call_graph
+                    ),
+                    example_inputs=None,
+                    constants=tagged_exported_program.constants,
+                    verifiers=[tagged_exported_program.verifier],
+                )
             )
+            partitioned_and_lowered_exported_programs[method_name] = lowered_program
         else:
             # this edge program wasn't partitioned, so we can just return it as is
             partitioned_and_lowered_exported_programs[method_name] = (
