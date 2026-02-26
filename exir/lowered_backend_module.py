@@ -383,7 +383,7 @@ def arrange_graph_placeholders(
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
-    but with placeholders in order of (Params + Buffers) (User Inputs)
+    but with placeholders in order of (Params + Buffers + Constants) (User Inputs)
 
     This is used by the delegate api which disturbs the placeholder ordering when creating a submodule
     from partitioned nodes
@@ -404,6 +404,7 @@ def arrange_graph_placeholders(
     # Add all placeholders into the graph first:
     param_nodes = []
     buffer_nodes = []
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
@@ -419,6 +420,11 @@ def arrange_graph_placeholders(
             and node.meta.get("delegation_tag", None) == tag
         ):
             buffer_nodes.append(node)
+        elif (
+            node.name in graph_sign.inputs_to_lifted_tensor_constants
+            and node.meta.get("delegation_tag", None) == tag
+        ):
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
@@ -428,6 +434,9 @@ def arrange_graph_placeholders(
     for buffer_node in buffer_nodes:
         new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
         node_map[buffer_node] = new_node
+    for constant_node in constant_nodes:
+        new_node = new_graph.node_copy(constant_node, lambda x: node_map[x])
+        node_map[constant_node] = new_node
     for input_node in input_nodes:
         new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
         node_map[input_node] = new_node
