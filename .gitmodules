@@ -24,7 +24,7 @@
 	url = https://github.com/pytorch/cpuinfo.git
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
-	url = https://github.com/google/pthreadpool.git
+	url = https://github.com/gregorycomer/pthreadpool.git
 [submodule "extension/llm/tokenizers"]
 	path = extension/llm/tokenizers
 	url = https://github.com/meta-pytorch/tokenizers.git
