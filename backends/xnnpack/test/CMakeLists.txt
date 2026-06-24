@@ -47,6 +47,7 @@ set(_graph_runtime_test_srcs
     runtime/test_layout.cpp
     runtime/test_kai_ukernel.cpp
     runtime/test_layout_assignment.cpp
+    runtime/test_linear_int4.cpp
     runtime/test_graph_builder.cpp
     runtime/test_shape_env.cpp
     runtime/test_arena.cpp
