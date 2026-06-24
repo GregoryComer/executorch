@@ -813,6 +813,116 @@ TEST(TestE2E, linear_qd8_qcint4_dynamic) {
   EXPECT_NEAR(d[3], -1.5f, 1e-1f);
 }
 
+TEST(TestE2E, linear_qd8_qsi4c32p_blockwise_dynamic) {
+  // Dynamically-quantized int8 activation x blockwise int4 weight (qsi4c32p).
+  // On Arm with KleidiAI this routes to the in-tree Kleidi kernels; elsewhere
+  // it falls back to XNNPACK delegation. Both must match the same fp reference,
+  // so this is a parity test for the in-tree path.
+  constexpr int M = 2;
+  constexpr int K = 64;
+  constexpr int N = 4;
+  constexpr int B = 32; // block size (multiple of 32, divides K)
+  constexpr int kBlocksPerRow = K / B;
+
+  auto builder = GraphBuilder();
+
+  auto float_input_spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(M), DimSizeSpec::constant(K)}};
+  auto dyn_quant_spec = TensorSpec{
+      .dtype = DType::QInt8,
+      .sizes = {DimSizeSpec::constant(M), DimSizeSpec::constant(K)},
+      .quant_params = PerRowQuantParams{.axis = -1, .is_dynamic = true}};
+  auto float_output_spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(M), DimSizeSpec::constant(N)}};
+
+  auto input = builder.createInput(float_input_spec);
+  auto qinput =
+      builder.createOperator(Operator::Quantize, dyn_quant_spec, {input});
+
+  // Logical int4 weights in [-3, 3]; symmetric (nibble = value + 8).
+  int8_t wlogical[N][K];
+  for (int n = 0; n < N; n++) {
+    for (int k = 0; k < K; k++) {
+      wlogical[n][k] = static_cast<int8_t>(((n + k) % 7) - 3);
+    }
+  }
+
+  auto filter_tensor = std::make_shared<Tensor>();
+  filter_tensor->dtype = DType::QInt4;
+  filter_tensor->sizes = {N, K};
+  filter_tensor->storage = make_owned(N * K / 2);
+  auto* fw = filter_tensor->data_mut<uint8_t>();
+  std::memset(fw, 0, N * K / 2);
+  for (int n = 0; n < N; n++) {
+    for (int k = 0; k < K; k++) {
+      uint8_t nib = static_cast<uint8_t>((wlogical[n][k] + 8) & 0xF);
+      size_t idx = static_cast<size_t>(n) * K + k;
+      if (idx % 2 == 0) {
+        fw[idx / 2] |= nib; // low nibble = even index
+      } else {
+        fw[idx / 2] |= static_cast<uint8_t>(nib << 4);
+      }
+    }
+  }
+  // bf16 scales (one per block per row), all 1.0 (bf16(1.0) == 0x3F80).
+  filter_tensor->aux_storage.push_back(
+      make_owned(N * kBlocksPerRow * sizeof(uint16_t)));
+  auto* scales = static_cast<uint16_t*>(filter_tensor->aux_storage[0].data);
+  for (int i = 0; i < N * kBlocksPerRow; i++) {
+    scales[i] = 0x3F80;
+  }
+  auto filter =
+      builder.createConstant(filter_tensor, qint4_blockwise_sym(1, B));
+
+  auto linear_out = builder.createOperator(
+      Operator::Linear,
+      float_output_spec,
+      {qinput, filter, ValueHandle::null()});
+  builder.createOutput(linear_out);
+
+  auto graph = builder.build();
+  auto executor_result = Executor::build(graph);
+  ASSERT_TRUE(executor_result.ok());
+  auto& executor = *executor_result;
+
+  Tensor ti;
+  ti.dtype = DType::Float32;
+  ti.sizes = {M, K};
+  ti.storage = make_owned(M * K * sizeof(float));
+  auto* di = ti.data_mut<float>();
+  for (int m = 0; m < M; m++) {
+    for (int k = 0; k < K; k++) {
+      di[m * K + k] = 0.05f * static_cast<float>(((m * K + k) % 11) - 5);
+    }
+  }
+
+  std::vector<Tensor> inputs;
+  inputs.push_back(std::move(ti));
+
+  auto outputs_result = executor.run({inputs.data(), inputs.size()});
+  ASSERT_TRUE(outputs_result.ok());
+  auto& outputs = *outputs_result;
+
+  ASSERT_EQ(outputs.size(), 1);
+  ASSERT_EQ(outputs[0].sizes, (std::vector<uint64_t>{M, N}));
+  auto* d = outputs[0].data_const<float>();
+
+  // Reference: scale is 1.0, so out[m][n] = sum_k input[m][k] * wlogical[n][k].
+  // Tolerance accounts for dynamic int8 quantization of the activation.
+  for (int m = 0; m < M; m++) {
+    for (int n = 0; n < N; n++) {
+      float expected = 0;
+      for (int k = 0; k < K; k++) {
+        expected += di[m * K + k] * static_cast<float>(wlogical[n][k]);
+      }
+      EXPECT_NEAR(d[m * N + n], expected, std::abs(expected) * 0.05f + 0.05f)
+          << "at (" << m << ", " << n << ")";
+    }
+  }
+}
+
 TEST(TestE2E, linear_qint8_static_requantized) {
   auto builder = GraphBuilder();
 

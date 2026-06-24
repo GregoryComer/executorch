@@ -76,3 +76,12 @@ partition_xnn_subgraphs
 9. E2E parity tests vs delegated path.
 
 Commits 2–6 are the reusable framework; 7–8 the int4 instantiation.
+
+## Status
+
+All commits implemented. Everything compiles on x86 (KleidiAI off: the int4
+path falls back to XNNPACK delegation) and against the real kai headers with the
+flag on. Numeric correctness of the in-tree Kleidi kernels (weight nibble order,
+bf16 scale format, clamp, m/n/k derivation) is **pending validation on an Arm
+build**; the `linear_qd8_qsi4c32p_blockwise_dynamic` e2e test is the parity check
+(delegated on x86, in-tree on Arm, same fp reference).
