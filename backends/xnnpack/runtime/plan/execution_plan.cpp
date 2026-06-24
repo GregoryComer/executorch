@@ -66,11 +66,14 @@ runtime::Result<std::vector<PlanStep>> create_plan_steps(
             [](const ConstantNode&) {},
             [&steps, &node, &graph, &err](const CallOperatorNode& n) {
               std::vector<ValueSlot> input_slots;
+              std::vector<graph::TensorSpec> input_specs;
               input_slots.reserve(n.args.size());
+              input_specs.reserve(n.args.size());
               for (const auto& arg : n.args) {
                 if (arg.is_null())
                   continue;
                 input_slots.push_back(graph.nodes[arg.node].tag + arg.output);
+                input_specs.push_back(graph.get_tensor_spec(arg));
               }
 
               std::vector<ValueSlot> output_slots;
@@ -78,7 +81,8 @@ runtime::Result<std::vector<PlanStep>> create_plan_steps(
                 output_slots.push_back(node.tag + i);
               }
 
-              auto op = operators::create_operator(n.op);
+              auto op = operators::create_operator(
+                  n, {input_specs.data(), input_specs.size()});
               if (op == nullptr) {
                 err = runtime::Error::NotSupported;
                 return;
