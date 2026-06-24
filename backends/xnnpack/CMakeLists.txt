@@ -31,9 +31,10 @@ endif()
 if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
   add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
 endif()
-if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-  add_definitions(-DENABLE_XNNPACK_KLEIDI)
-endif()
+# ENABLE_XNNPACK_KLEIDI is defined below, after Dependencies.cmake has had a
+# chance to create the `kleidiai` target. In-tree Kleidi kernels include kai
+# headers and call kai symbols directly, so the macro must only be set when that
+# target actually exists (XNNPACK builds it on ARM64 only).
 
 set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
@@ -120,6 +121,17 @@ target_include_directories(
 )
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 executorch_target_link_options_shared_lib(xnnpack_backend)
+
+# KleidiAI in-tree kernels. XNNPACK builds the `kleidiai` target only on ARM64
+# (and only when EXECUTORCH_XNNPACK_ENABLE_KLEIDI is set, which drives
+# XNNPACK_ENABLE_KLEIDIAI in Dependencies.cmake). Link it and enable the in-tree
+# Kleidi code paths only when that target actually exists, so x86 / flag-off
+# builds compile the Kleidi code out cleanly. The `kleidiai` target carries its
+# include directories transitively, exposing the kai/ headers.
+if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI AND TARGET kleidiai)
+  target_link_libraries(xnnpack_backend PRIVATE kleidiai)
+  target_compile_definitions(xnnpack_backend PRIVATE ENABLE_XNNPACK_KLEIDI)
+endif()
 
 executorch_move_interface_include_directories_to_build_time_only(XNNPACK)
 install(

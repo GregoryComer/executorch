@@ -485,6 +485,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/graph/graph.cpp",
     "runtime/graph/graph_builder.cpp",
     "runtime/operators/operator.cpp",
+    "runtime/operators/kleidi/kai_available.cpp",
     "runtime/executor/arena.cpp",
     "runtime/executor/shape_env.cpp",
     "runtime/plan/partition.cpp",
