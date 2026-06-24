@@ -1,7 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <executorch/backends/xnnpack/runtime/core/tensor.h>
 #include <executorch/backends/xnnpack/runtime/graph/graph_builder.h>
+#include <executorch/backends/xnnpack/runtime/operators/kleidi/kai_available.h>
 #include <executorch/backends/xnnpack/runtime/plan/partition.h>
+#include <executorch/backends/xnnpack/runtime/plan/xnn_support.h>
+
+#include <memory>
 
 using namespace executorch::backends::xnnpack::core;
 using namespace executorch::backends::xnnpack::graph;
@@ -85,6 +90,71 @@ TEST(TestPartition, sequential_all_delegated) {
   // Input nodes should not be assigned to any partition.
   EXPECT_EQ(graph.nodes[input_a.node].tag, 0);
   EXPECT_EQ(graph.nodes[input_b.node].tag, 0);
+}
+
+// --- In-tree routing (prefer_in_tree_kernel) ---
+
+TEST(TestRouting, plain_op_is_not_routed_in_tree) {
+  auto builder = GraphBuilder();
+  auto spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(10)}};
+  auto a = builder.createInput(spec);
+  auto b = builder.createInput(spec);
+  auto add = builder.createOperator(Operator::Add, spec, a, b);
+  builder.createOutput(add);
+  auto graph = builder.build();
+  graph.update_users();
+
+  EXPECT_FALSE(prefer_in_tree_kernel(add.node, graph));
+}
+
+TEST(TestRouting, int4_dynamic_linear_routing) {
+  auto builder = GraphBuilder();
+
+  // fp32 activation input [M, K].
+  auto fin = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(4), DimSizeSpec::constant(64)}};
+  auto input = builder.createInput(fin);
+
+  // Dynamic-quant convert -> qdint8 activation.
+  auto qspec = TensorSpec{
+      .dtype = DType::QInt8,
+      .sizes = {DimSizeSpec::constant(4), DimSizeSpec::constant(64)},
+      .quant_params = PerRowQuantParams{.axis = -1, .is_dynamic = true}};
+  auto quant = builder.createOperator(Operator::Quantize, qspec, input);
+
+  // Blockwise int4 weight constant [N, K], block size 32 along K.
+  auto weight_tensor = std::make_shared<Tensor>();
+  weight_tensor->dtype = DType::QInt4;
+  weight_tensor->sizes = {32, 64};
+  auto weight =
+      builder.createConstant(weight_tensor, qint4_blockwise_sym(1, 32));
+
+  auto out = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(4), DimSizeSpec::constant(32)}};
+  auto linear = builder.createOperator(
+      Operator::Linear, out, ValueHandles{quant, weight, ValueHandle::null()});
+  builder.createOutput(linear);
+
+  auto graph = builder.build();
+  graph.update_users();
+
+  bool linear_in_tree = prefer_in_tree_kernel(linear.node, graph);
+  bool quant_in_tree = prefer_in_tree_kernel(quant.node, graph);
+
+  if (!executorch::backends::xnnpack::operators::kleidi::kleidi_compiled_in()) {
+    // Without KleidiAI, no in-tree kernel exists: the pattern falls back to
+    // XNNPACK delegation.
+    EXPECT_FALSE(linear_in_tree);
+    EXPECT_FALSE(quant_in_tree);
+  } else {
+    // With KleidiAI (and a supporting CPU), the GEMM and its dynamic-quant
+    // producer route in-tree together.
+    EXPECT_EQ(linear_in_tree, quant_in_tree);
+  }
 }
 
 TEST(TestPartition, sequential_alternating) {

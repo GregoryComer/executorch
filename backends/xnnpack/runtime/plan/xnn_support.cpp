@@ -1,8 +1,12 @@
 #include <executorch/backends/xnnpack/runtime/plan/xnn_support.h>
 
 #include <executorch/backends/xnnpack/runtime/core/dtype.h>
+#include <executorch/backends/xnnpack/runtime/core/quant_params.h>
 #include <executorch/backends/xnnpack/runtime/core/variant_util.h>
+#include <executorch/backends/xnnpack/runtime/operators/kleidi/kai_ukernel.h>
 #include <executorch/runtime/platform/log.h>
+
+#include <optional>
 
 namespace executorch::backends::xnnpack::plan {
 
@@ -109,10 +113,95 @@ bool check_xnn_node_support(const CallOperatorNode& node, const Graph& graph) {
   return true;
 }
 
-bool prefer_in_tree_kernel(
-    const CallOperatorNode& /*node*/,
-    const Graph& /*graph*/) {
-  // TODO Add logic here once we have in-tree kernels...
+namespace {
+
+// Returns the constant extent of a tensor dim, or nullopt if it is symbolic.
+std::optional<uint64_t> const_dim(const graph::TensorSpec& spec, size_t i) {
+  if (i >= spec.sizes.size() || !spec.sizes[i].is_constant()) {
+    return std::nullopt;
+  }
+  return static_cast<uint64_t>(spec.sizes[i].offset);
+}
+
+// True if `spec` is a dynamically-quantized per-row int8 activation (qdint8).
+bool is_dynamic_qint8(const graph::TensorSpec& spec) {
+  if (spec.dtype != core::DType::QInt8 || !spec.quant_params) {
+    return false;
+  }
+  auto* pr = std::get_if<core::PerRowQuantParams>(&*spec.quant_params);
+  return pr != nullptr && pr->is_dynamic;
+}
+
+// True if the Linear `node` is an int4 dynamically-quantized linear for which
+// an in-tree Kleidi ukernel is available.
+bool is_int4_dynamic_linear(const CallOperatorNode& node, const Graph& graph) {
+  if (node.op != Operator::Linear || node.args.size() < 2 ||
+      node.args[0].is_null() || node.args[1].is_null()) {
+    return false;
+  }
+  auto act = graph.get_tensor_spec(node.args[0]);
+  auto weight = graph.get_tensor_spec(node.args[1]);
+  if (!is_dynamic_qint8(act) || weight.dtype != core::DType::QInt4 ||
+      !weight.quant_params) {
+    return false;
+  }
+  auto* pb = std::get_if<core::PerBlockQuantParams>(&*weight.quant_params);
+  if (pb == nullptr) {
+    return false;
+  }
+  // Weight is a constant [n, k] matrix.
+  auto n = const_dim(weight, 0);
+  auto k = const_dim(weight, 1);
+  if (!n || !k) {
+    return false;
+  }
+  return operators::kleidi::select_qsi4c32p_ukernel(
+             *n, *k, static_cast<uint32_t>(pb->block_size))
+      .has_value();
+}
+
+// True if the dynamic-quant node at `handle` produces the activation for an
+// in-tree int4 linear. Requires *all* users to be such linears, so we never
+// hand a Kleidi-packed buffer to an op that cannot read it.
+bool feeds_only_int4_linears(NodeHandle handle, const Graph& graph) {
+  const auto& users = graph.nodes[handle].users;
+  if (users.empty()) {
+    return false;
+  }
+  for (auto user : users) {
+    auto* op = std::get_if<CallOperatorNode>(&graph.nodes[user].value);
+    if (op == nullptr || !is_int4_dynamic_linear(*op, graph) ||
+        op->args[0].node != handle) {
+      return false;
+    }
+  }
+  return true;
+}
+
+} // namespace
+
+bool prefer_in_tree_kernel(NodeHandle handle, const Graph& graph) {
+  auto* node = std::get_if<CallOperatorNode>(&graph.nodes[handle].value);
+  if (node == nullptr) {
+    return false;
+  }
+
+  // The int4 GEMM itself.
+  if (is_int4_dynamic_linear(*node, graph)) {
+    return true;
+  }
+
+  // The dynamic-quant (convert -> qdint8) that feeds an int4 GEMM: it becomes
+  // the in-tree LHS-pack op, so it must be kept out of the XNNPACK subgraph
+  // too.
+  if (node->op == Operator::Quantize) {
+    auto* out = std::get_if<graph::TensorSpec>(&node->output_specs);
+    if (out != nullptr && is_dynamic_qint8(*out) &&
+        feeds_only_int4_linears(handle, graph)) {
+      return true;
+    }
+  }
+
   return false;
 }
 

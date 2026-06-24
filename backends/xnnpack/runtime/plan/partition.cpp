@@ -267,10 +267,11 @@ runtime::Result<uint32_t> assign_partitions(Graph& graph) {
 namespace {
 
 void tag_xnn_nodes(Graph& graph) {
-  for (auto& node : graph.nodes) {
+  for (NodeHandle h = 0; h < graph.nodes.size(); h++) {
+    auto& node = graph.nodes[h];
     auto* op_node = std::get_if<CallOperatorNode>(&node.value);
     if (op_node && check_xnn_node_support(*op_node, graph) &&
-        !prefer_in_tree_kernel(*op_node, graph)) {
+        !prefer_in_tree_kernel(h, graph)) {
       node.flags |= NodeFlags::UseXnnpack;
     }
   }
