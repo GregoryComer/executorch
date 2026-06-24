@@ -492,6 +492,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/plan/partition.cpp",
     "runtime/plan/xnn_support.cpp",
     "runtime/plan/execution_plan.cpp",
+    "runtime/plan/layout_assignment.cpp",
     "runtime/plan/schedule.cpp",
     "runtime/plan/xnn_subgraph.cpp",
     "runtime/plan/memory_plan.cpp",

@@ -1,5 +1,6 @@
 #include <executorch/backends/xnnpack/runtime/operators/operator.h>
 #include <executorch/backends/xnnpack/runtime/plan/execution_plan.h>
+#include <executorch/backends/xnnpack/runtime/plan/layout_assignment.h>
 #include <executorch/backends/xnnpack/runtime/plan/partition.h>
 #include <executorch/backends/xnnpack/runtime/plan/schedule.h>
 #include <executorch/backends/xnnpack/runtime/plan/xnn_subgraph.h>
@@ -27,7 +28,8 @@ uint32_t assign_value_slots(
 
 runtime::Result<std::vector<PlanStep>> create_plan_steps(
     const graph::Graph& graph,
-    Span<const NodeHandle> linear_schedule) {
+    Span<const NodeHandle> linear_schedule,
+    OperatorMap& ops) {
   std::vector<PlanStep> steps;
   steps.reserve(linear_schedule.size());
 
@@ -64,16 +66,14 @@ runtime::Result<std::vector<PlanStep>> create_plan_steps(
             },
             [](const InputNode&) {},
             [](const ConstantNode&) {},
-            [&steps, &node, &graph, &err](const CallOperatorNode& n) {
+            [&steps, &node, node_handle, &graph, &ops, &err](
+                const CallOperatorNode& n) {
               std::vector<ValueSlot> input_slots;
-              std::vector<graph::TensorSpec> input_specs;
               input_slots.reserve(n.args.size());
-              input_specs.reserve(n.args.size());
               for (const auto& arg : n.args) {
                 if (arg.is_null())
                   continue;
                 input_slots.push_back(graph.nodes[arg.node].tag + arg.output);
-                input_specs.push_back(graph.get_tensor_spec(arg));
               }
 
               std::vector<ValueSlot> output_slots;
@@ -81,12 +81,14 @@ runtime::Result<std::vector<PlanStep>> create_plan_steps(
                 output_slots.push_back(node.tag + i);
               }
 
-              auto op = operators::create_operator(
-                  n, {input_specs.data(), input_specs.size()});
-              if (op == nullptr) {
+              // The operator was instantiated up front (so the layout pass
+              // could query its contract); move it into the step here.
+              auto it = ops.find(node_handle);
+              if (it == ops.end() || it->second == nullptr) {
                 err = runtime::Error::NotSupported;
                 return;
               }
+              auto op = std::move(it->second);
               op->setup({n.constant_args.data(), n.constant_args.size()});
 
               RunOperatorStep step;
@@ -106,13 +108,19 @@ runtime::Result<std::vector<PlanStep>> create_plan_steps(
 runtime::Result<ExecutionPlan> create_execution_plan(graph::Graph& graph) {
   ET_CHECK_OK_OR_RETURN_ERROR(partition_xnn_subgraphs(graph));
 
+  // Instantiate in-tree operators and assign packed/relaid-out layouts before
+  // scheduling, so memory planning sizes packed buffers correctly and flexible
+  // producers know which layout to emit.
+  ET_UNWRAP(ops, instantiate_operators(graph));
+  ET_CHECK_OK_OR_RETURN_ERROR(propagate_layouts(graph, ops));
+
   auto linear_schedule = schedule(graph);
   Span<const NodeHandle> schedule_span(
       linear_schedule.data(), linear_schedule.size());
   auto num_value_slots = assign_value_slots(graph, schedule_span);
   (void)num_value_slots;
 
-  ET_UNWRAP(plan_steps, create_plan_steps(graph, schedule_span));
+  ET_UNWRAP(plan_steps, create_plan_steps(graph, schedule_span, ops));
   ExecutionPlan plan;
   plan.steps = std::move(plan_steps);
 
