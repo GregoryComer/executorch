@@ -488,6 +488,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/operators/kleidi/kai_available.cpp",
     "runtime/operators/kleidi/kai_ukernel.cpp",
     "runtime/operators/kleidi/linear_int4.cpp",
+    "runtime/operators/kleidi/dynamic_quant_pack.cpp",
     "runtime/executor/arena.cpp",
     "runtime/executor/shape_env.cpp",
     "runtime/plan/partition.cpp",

@@ -62,6 +62,13 @@ core::OpaquePacked lhs_layout(const KaiUkernelConfig& cfg);
 core::OpaquePacked rhs_layout(const KaiUkernelConfig& cfg);
 
 /*
+ * Reconstruct the geometry needed to pack an activation (mr/kr/sr) from an LHS
+ * OpaquePacked layout. Used by the dynamic-quant op, which only ever sees the
+ * layout it must emit, not the full ukernel config.
+ */
+KaiUkernelConfig lhs_config_from_layout(const core::OpaquePacked& layout);
+
+/*
  * Runtime wrappers used by the in-tree ops. m is the activation row count
  * (tokens), k the reduction dim, n the output channel count. These forward to
  * the corresponding kai_run_* / kai_get_*_size functions for the selected

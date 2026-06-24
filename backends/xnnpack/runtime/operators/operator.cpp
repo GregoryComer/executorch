@@ -1,5 +1,6 @@
 #include <executorch/backends/xnnpack/runtime/operators/operator.h>
 
+#include <executorch/backends/xnnpack/runtime/operators/kleidi/dynamic_quant_pack.h>
 #include <executorch/backends/xnnpack/runtime/operators/kleidi/linear_int4.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -10,6 +11,11 @@ std::unique_ptr<Operator> create_operator(
     runtime::Span<const graph::TensorSpec> input_specs) {
   if (node.op == graph::Operator::Linear) {
     if (auto op = kleidi::make_linear_int4(node, input_specs)) {
+      return op;
+    }
+  }
+  if (node.op == graph::Operator::Quantize) {
+    if (auto op = kleidi::make_dynamic_quant_pack(node, input_specs)) {
       return op;
     }
   }

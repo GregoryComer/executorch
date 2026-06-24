@@ -20,12 +20,24 @@ namespace executorch::backends::xnnpack::operators::kleidi {
 using core::DType;
 using core::OpaquePacked;
 
+// OpaquePacked::params layout for both schemes. Shared by the layout factories
+// and lhs_config_from_layout so the encoding lives in one place.
+enum ParamIdx { kMr = 0, kNr = 1, kKr = 2, kSr = 3, kBl = 4, kScaleDt = 5 };
+
+KaiUkernelConfig lhs_config_from_layout(const OpaquePacked& layout) {
+  KaiUkernelConfig cfg;
+  // LHS packing only needs mr/kr/sr (and bl is carried for completeness); the
+  // matmul variant id is not required to pack the activation.
+  cfg.mr = layout.params[kMr];
+  cfg.kr = layout.params[kKr];
+  cfg.sr = layout.params[kSr];
+  cfg.bl = layout.params[kBl];
+  return cfg;
+}
+
 #if defined(ENABLE_XNNPACK_KLEIDI)
 
 namespace {
-
-// OpaquePacked::params layout for both schemes.
-enum ParamIdx { kMr = 0, kNr = 1, kKr = 2, kSr = 3, kBl = 4, kScaleDt = 5 };
 
 // Scales are stored as bf16, matching the blockwise int4 convention used by the
 // delegated path.
