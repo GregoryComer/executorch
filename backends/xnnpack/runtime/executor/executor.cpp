@@ -263,6 +263,7 @@ runtime::Result<Executor> Executor::build(graph::Graph& graph) {
   std::vector<core::Tensor> values(num_slots);
   for (size_t i = 0; i < num_slots; i++) {
     values[i].dtype = memory_plan.value_specs[i].dtype;
+    values[i].layout = memory_plan.value_specs[i].layout;
     if (std::holds_alternative<plan::ArenaAllocation>(
             memory_plan.value_allocations[i])) {
       values[i].storage.owner = core::StorageOwner::Arena;

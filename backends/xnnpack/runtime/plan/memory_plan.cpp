@@ -91,7 +91,8 @@ runtime::Error MemoryPlan::replan(const executor::ShapeEnv& shape_env) {
           size,
           core::compute_storage_size(
               {concrete_sizes.data(), concrete_sizes.size()},
-              value_specs[i].dtype));
+              value_specs[i].dtype,
+              value_specs[i].layout));
       arena->offset = arena_offset;
       arena->size = size;
       arena_offset += size;

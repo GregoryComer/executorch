@@ -1,12 +1,14 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/core/dtype.h>
+#include <executorch/backends/xnnpack/runtime/core/layout.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace executorch::backends::xnnpack::core {
@@ -36,6 +38,10 @@ struct Tensor {
   Storage storage;
   std::vector<Storage> aux_storage;
 
+  // Physical layout of `storage`. nullopt == default (row-major, contiguous).
+  // A non-default layout (e.g. a Kleidi-packed buffer) drives storage sizing.
+  std::optional<Layout> layout;
+
   template <class T>
   const T* data_const() const {
     return static_cast<const T*>(storage.data);
@@ -51,6 +57,7 @@ struct Tensor {
 
 runtime::Result<size_t> compute_storage_size(
     runtime::Span<const uint64_t> sizes,
-    DType dtype);
+    DType dtype,
+    const std::optional<Layout>& layout = std::nullopt);
 
 } // namespace executorch::backends::xnnpack::core

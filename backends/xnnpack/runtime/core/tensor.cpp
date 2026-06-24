@@ -75,7 +75,8 @@ runtime::Result<size_t> Tensor::numel() const {
 runtime::Error Tensor::resize(std::vector<uint64_t> new_sizes) {
   ET_UNWRAP(
       new_size_in_bytes,
-      compute_storage_size({new_sizes.data(), new_sizes.size()}, dtype));
+      compute_storage_size(
+          {new_sizes.data(), new_sizes.size()}, dtype, layout));
 
   if (new_size_in_bytes <= storage.size_in_bytes) {
     sizes = std::move(new_sizes);
@@ -100,7 +101,8 @@ runtime::Error Tensor::resize(std::vector<uint64_t> new_sizes) {
   return runtime::Error::Ok;
 }
 
-runtime::Result<size_t> compute_storage_size(
+namespace {
+runtime::Result<size_t> contiguous_storage_size(
     Span<const uint64_t> sizes,
     DType dtype) {
   ET_UNWRAP(num_elements, checked_num_elements(sizes));
@@ -147,6 +149,38 @@ runtime::Result<size_t> compute_storage_size(
       "Unknown DType %d in compute_storage_size",
       static_cast<int>(dtype));
   return runtime::Error::InvalidArgument;
+}
+} // namespace
+
+runtime::Result<size_t> compute_storage_size(
+    Span<const uint64_t> sizes,
+    DType dtype,
+    const std::optional<Layout>& layout) {
+  if (!layout) {
+    return contiguous_storage_size(sizes, dtype);
+  }
+
+  return std::visit(
+      [&](const auto& l) -> runtime::Result<size_t> {
+        using T = std::decay_t<decltype(l)>;
+        if constexpr (std::is_same_v<T, DimOrder>) {
+          // A permutation does not change the byte count.
+          return contiguous_storage_size(sizes, dtype);
+        } else if constexpr (std::is_same_v<T, OpaquePacked>) {
+          ET_CHECK_OR_RETURN_ERROR(
+              l.size_fn != nullptr,
+              Internal,
+              "OpaquePacked layout (scheme %u) has no size_fn",
+              l.scheme_id);
+          return l.size_fn(l, sizes, dtype);
+        } else {
+          static_assert(std::is_same_v<T, Blocked>);
+          // Blocked layouts are defined but not yet wired to any kernel.
+          ET_LOG(Error, "Blocked layout sizing is not yet implemented");
+          return runtime::Error::NotSupported;
+        }
+      },
+      *layout);
 }
 
 } // namespace executorch::backends::xnnpack::core

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/core/dtype.h>
+#include <executorch/backends/xnnpack/runtime/core/layout.h>
 #include <executorch/backends/xnnpack/runtime/core/quant_params.h>
 #include <executorch/backends/xnnpack/runtime/graph/handles.h>
 
@@ -62,9 +63,14 @@ struct TensorSpec {
   std::vector<DimSizeSpec> sizes;
   std::optional<core::QuantParams> quant_params;
 
+  // Physical layout. nullopt == default (row-major, contiguous). A non-default
+  // layout is assigned by the layout-propagation pass and drives storage
+  // sizing.
+  std::optional<core::Layout> layout;
+
   bool operator==(const TensorSpec& o) const {
     return dtype == o.dtype && sizes == o.sizes &&
-        quant_params == o.quant_params;
+        quant_params == o.quant_params && layout == o.layout;
   }
 };
 
