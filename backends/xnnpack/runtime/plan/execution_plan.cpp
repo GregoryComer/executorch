@@ -89,7 +89,10 @@ runtime::Result<std::vector<PlanStep>> create_plan_steps(
                 return;
               }
               auto op = std::move(it->second);
-              op->setup({n.constant_args.data(), n.constant_args.size()});
+              err = op->setup({n.constant_args.data(), n.constant_args.size()});
+              if (err != runtime::Error::Ok) {
+                return;
+              }
 
               RunOperatorStep step;
               step.op = std::move(op);

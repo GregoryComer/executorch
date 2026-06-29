@@ -3,7 +3,7 @@
 #include <executorch/backends/xnnpack/runtime/core/layout.h>
 #include <executorch/backends/xnnpack/runtime/core/quant_params.h>
 #include <executorch/backends/xnnpack/runtime/operators/kleidi/kai_ukernel.h>
-#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/core/error.h>
 
 #include <optional>
 #include <variant>
@@ -52,11 +52,17 @@ class DynamicQuantPack : public Operator {
     }
   }
 
-  void execute(Span<core::Tensor*> inputs, Span<core::Tensor*> outputs)
-      override {
-    ET_CHECK(!inputs.empty() && !outputs.empty());
-    ET_CHECK_MSG(
-        cfg_.has_value(), "DynamicQuantPack ran without a resolved LHS layout");
+  runtime::Error execute(
+      Span<core::Tensor*> inputs,
+      Span<core::Tensor*> outputs) override {
+    ET_CHECK_OR_RETURN_ERROR(
+        !inputs.empty() && !outputs.empty(),
+        InvalidArgument,
+        "DynamicQuantPack requires inputs and outputs");
+    ET_CHECK_OR_RETURN_ERROR(
+        cfg_.has_value(),
+        Internal,
+        "DynamicQuantPack ran without a resolved LHS layout");
     const auto* in = inputs[0];
     auto* out = outputs[0];
 
@@ -73,6 +79,7 @@ class DynamicQuantPack : public Operator {
         in->data_const<float>(),
         /*lhs_stride=*/k * sizeof(float),
         out->storage.data);
+    return runtime::Error::Ok;
   }
 
  private:

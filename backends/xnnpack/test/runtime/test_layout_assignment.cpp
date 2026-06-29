@@ -24,7 +24,9 @@ namespace {
 struct FixedInputConsumer : ops::Operator {
   Layout required;
   explicit FixedInputConsumer(Layout l) : required(std::move(l)) {}
-  void execute(Span<Tensor*>, Span<Tensor*>) override {}
+  Error execute(Span<Tensor*>, Span<Tensor*>) override {
+    return Error::Ok;
+  }
   std::vector<ops::LayoutConstraint> required_input_layouts(
       Span<const TensorSpec> inputs) const override {
     std::vector<ops::LayoutConstraint> r;
@@ -40,7 +42,9 @@ struct FixedInputConsumer : ops::Operator {
 struct RecordingProducer : ops::Operator {
   bool configured = false;
   std::vector<std::optional<Layout>> outputs;
-  void execute(Span<Tensor*>, Span<Tensor*>) override {}
+  Error execute(Span<Tensor*>, Span<Tensor*>) override {
+    return Error::Ok;
+  }
   void configure_layouts(
       Span<const std::optional<Layout>>,
       Span<const std::optional<Layout>> resolved_outputs) override {

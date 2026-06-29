@@ -2,7 +2,7 @@
 
 #include <executorch/backends/xnnpack/runtime/core/quant_params.h>
 #include <executorch/backends/xnnpack/runtime/operators/kleidi/kai_ukernel.h>
-#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/core/error.h>
 
 #include <cstdint>
 #include <optional>
@@ -67,13 +67,18 @@ class LinearInt4 : public Operator {
     return reqs;
   }
 
-  void prepare(Span<core::Tensor*> inputs, Span<core::Tensor*> outputs)
-      override {
+  runtime::Error prepare(
+      Span<core::Tensor*> inputs,
+      Span<core::Tensor*> outputs) override {
     (void)outputs;
-    ET_CHECK(inputs.size() >= 2);
+    ET_CHECK_OR_RETURN_ERROR(
+        inputs.size() >= 2,
+        InvalidArgument,
+        "LinearInt4 expects at least 2 inputs");
     const auto* weight = inputs[1];
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_ERROR(
         !weight->aux_storage.empty(),
+        InvalidArgument,
         "int4 weight is missing block scale data");
 
     const auto* rhs = weight->data_const<uint8_t>();
@@ -85,11 +90,16 @@ class LinearInt4 : public Operator {
     packed_rhs_.resize(rhs_packed_size(cfg_, n_, k_));
     run_rhs_pack(
         cfg_, n_, k_, rhs, bias, scales, scale_stride, packed_rhs_.data());
+    return runtime::Error::Ok;
   }
 
-  void execute(Span<core::Tensor*> inputs, Span<core::Tensor*> outputs)
-      override {
-    ET_CHECK(!inputs.empty() && !outputs.empty());
+  runtime::Error execute(
+      Span<core::Tensor*> inputs,
+      Span<core::Tensor*> outputs) override {
+    ET_CHECK_OR_RETURN_ERROR(
+        !inputs.empty() && !outputs.empty(),
+        InvalidArgument,
+        "LinearInt4 requires inputs and outputs");
     const auto* lhs = inputs[0];
     auto* out = outputs[0];
 
@@ -110,6 +120,7 @@ class LinearInt4 : public Operator {
         /*dst_stride_row=*/n_ * sizeof(float),
         output_min_,
         output_max_);
+    return runtime::Error::Ok;
   }
 
  private:
