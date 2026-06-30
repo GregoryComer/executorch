@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace executorch::backends::xnnpack::core {
@@ -37,6 +38,11 @@ struct Tensor {
   std::vector<uint64_t> sizes;
   Storage storage;
   std::vector<Storage> aux_storage;
+
+  // For a constant: the PTD named-data key of its unpacked source, if any.
+  // Empty for inline / non-data-separated constants. Used as the stable
+  // identity of the weight in the packed-weight cache key.
+  std::string source_key;
 
   // Physical layout of `storage`. nullopt == default (row-major, contiguous).
   // A non-default layout (e.g. a Kleidi-packed buffer) drives storage sizing.

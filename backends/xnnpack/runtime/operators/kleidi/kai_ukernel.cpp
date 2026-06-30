@@ -195,6 +195,28 @@ void run_lhs_quant_pack(
       lhs_packed);
 }
 
+uint64_t qsi4c32p_packing_fingerprint(const KaiUkernelConfig& cfg) {
+  // FNV-1a-ish fold of: scheme marker, KleidiAI version, ukernel geometry, and
+  // (on SME hardware) the runtime vector length the packed layout depends on.
+  uint64_t fp = 1469598103934665603ull;
+  auto fold = [&fp](uint64_t v) { fp = (fp ^ v) * 1099511628211ull; };
+  fold(kSchemeQsi4c32pRhs);
+  for (const char* v = kai_get_version(); v != nullptr && *v != '\0'; ++v) {
+    fold(static_cast<uint64_t>(static_cast<unsigned char>(*v)));
+  }
+  fold(cfg.variant_id);
+  fold(cfg.nr);
+  fold(cfg.kr);
+  fold(cfg.sr);
+  fold(cfg.bl);
+  // TODO(kleidi-sme): when SME variants are registered, also fold in the
+  // streaming vector length (kai_get_sme_vector_length_*) -- the SME packed
+  // layout depends on it, so a buffer packed at one VL must not be reused at
+  // another. The accessor is arch-gated, so it can't be called unconditionally
+  // from this generic translation unit.
+  return fp;
+}
+
 size_t rhs_packed_size(const KaiUkernelConfig& cfg, size_t n, size_t k) {
   return kai_get_rhs_packed_size_rhs_pack_nxk_qsi4c32p_qsu4c32s1s0(
       n, k, cfg.nr, cfg.kr, cfg.sr, cfg.bl, kScaleDataType);
@@ -287,6 +309,10 @@ void run_lhs_quant_pack(
     size_t,
     void*) {
   ET_CHECK_MSG(false, "KleidiAI is not compiled in");
+}
+
+uint64_t qsi4c32p_packing_fingerprint(const KaiUkernelConfig&) {
+  return 0;
 }
 
 size_t rhs_packed_size(const KaiUkernelConfig&, size_t, size_t) {

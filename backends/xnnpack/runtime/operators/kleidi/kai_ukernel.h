@@ -83,6 +83,15 @@ void run_lhs_quant_pack(
     size_t lhs_stride,
     void* lhs_packed);
 
+/*
+ * A stable identifier of *how* a weight is packed for this ukernel: scheme +
+ * geometry + KleidiAI version, plus the SME vector length when running on SME
+ * hardware (SME packed layouts depend on it). Used as the packing component of
+ * the weights-cache key so a buffer packed under one config/version/VL is never
+ * reused under another. Analogous to XNNPACK's xnn_fingerprint.
+ */
+uint64_t qsi4c32p_packing_fingerprint(const KaiUkernelConfig& cfg);
+
 size_t rhs_packed_size(const KaiUkernelConfig& cfg, size_t n, size_t k);
 void run_rhs_pack(
     const KaiUkernelConfig& cfg,

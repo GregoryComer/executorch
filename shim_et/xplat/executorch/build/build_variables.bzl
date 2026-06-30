@@ -482,6 +482,8 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/profiling/XNNProfiler.cpp",
     "runtime/core/tensor.cpp",
     "runtime/core/quant_params.cpp",
+    "runtime/cache/packed_weight_cache.cpp",
+    "runtime/cache/xnn_weights_cache_adapter.cpp",
     "runtime/graph/graph.cpp",
     "runtime/graph/graph_builder.cpp",
     "runtime/operators/operator.cpp",

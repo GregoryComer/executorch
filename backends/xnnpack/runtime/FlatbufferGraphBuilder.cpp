@@ -379,6 +379,17 @@ static void define_value(BuildContext& ctx, const fb::XValue* value) {
       tensor->storage = std::move(*storage);
     }
 
+    // Carry the PTD named-data key (if any) so the packed-weight cache can use
+    // it as this constant's stable identity across builds.
+    auto* offsets = ctx.graph->constant_data();
+    if (offsets != nullptr && buf_idx < offsets->size()) {
+      auto* off = offsets->Get(buf_idx);
+      if (flatbuffers::IsFieldPresent(
+              off, fb::ConstantDataOffset::VT_NAMED_KEY)) {
+        tensor->source_key = off->named_key()->str();
+      }
+    }
+
     // Per-channel quantization carries one scale per output channel; load it
     // into aux_storage, where define_tensor expects the scale pointer.
     if (qtv &&

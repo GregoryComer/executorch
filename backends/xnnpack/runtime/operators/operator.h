@@ -12,6 +12,10 @@
 #include <optional>
 #include <vector>
 
+namespace executorch::backends::xnnpack::cache {
+class PackedWeightCache;
+} // namespace executorch::backends::xnnpack::cache
+
 namespace executorch::backends::xnnpack::operators {
 
 /*
@@ -68,7 +72,9 @@ class Operator {
   }
   virtual runtime::Error prepare(
       runtime::Span<core::Tensor*> inputs,
-      runtime::Span<core::Tensor*> outputs) {
+      runtime::Span<core::Tensor*> outputs,
+      cache::PackedWeightCache* weight_cache) {
+    (void)weight_cache;
     return runtime::Error::Ok;
   }
   virtual runtime::Error reshape(
@@ -78,6 +84,14 @@ class Operator {
   virtual runtime::Error execute(
       runtime::Span<core::Tensor*> inputs,
       runtime::Span<core::Tensor*> outputs) = 0;
+
+  // Indices (into this op's non-null input list) of constant inputs whose raw
+  // bytes the op fully absorbs during prepare() (e.g. a weight packed into the
+  // cache) and will NOT read during execute(). Lets the executor free the
+  // unpacked source after prepare. Default: none absorbed.
+  virtual std::vector<size_t> consumed_constant_inputs() const {
+    return {};
+  }
 
   // Layout contract, queried by the layout-propagation pass. `input_specs` are
   // the specs of the (non-null) inputs, in argument order.

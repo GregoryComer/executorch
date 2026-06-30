@@ -7,6 +7,7 @@
 #include <executorch/runtime/platform/log.h>
 
 #include <xnnpack.h>
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
@@ -280,6 +281,7 @@ runtime::Result<Executor> Executor::build(graph::Graph& graph) {
       continue;
     auto slot = graph.nodes[n].tag;
     values[slot].sizes = cn->tensor->sizes;
+    values[slot].source_key = cn->tensor->source_key;
     values[slot].storage.data =
         const_cast<void*>(static_cast<const void*>(cn->tensor->storage.data));
     values[slot].storage.size_in_bytes = cn->tensor->storage.size_in_bytes;
@@ -294,7 +296,11 @@ runtime::Result<Executor> Executor::build(graph::Graph& graph) {
 
   auto t3 = std::chrono::steady_clock::now();
 
-  // Let operators pre-process constant tensors (e.g., pack weights).
+  // Let operators pre-process constant tensors (e.g., pack weights). Packed
+  // weights are stored in (and shared via) the weight cache, which is moved
+  // into the executor below; the borrowed packed views stay valid across the
+  // move because vector/map moves preserve the underlying buffer addresses.
+  cache::PackedWeightCache weight_cache;
   for (auto& step : execution_plan.steps) {
     auto* op_step = std::get_if<plan::RunOperatorStep>(&step);
     if (!op_step)
@@ -309,7 +315,48 @@ runtime::Result<Executor> Executor::build(graph::Graph& graph) {
       outputs.push_back(&values[slot]);
 
     ET_CHECK_OK_OR_RETURN_ERROR(op_step->op->prepare(
-        {inputs.data(), inputs.size()}, {outputs.data(), outputs.size()}));
+        {inputs.data(), inputs.size()},
+        {outputs.data(), outputs.size()},
+        &weight_cache));
+  }
+  weight_cache.finalize();
+
+  // Free the unpacked source of constants that in-tree operators fully absorbed
+  // during prepare (e.g. packed weights), unless some step still needs the raw
+  // bytes (an XNN subgraph, a non-absorbing op, or a graph output).
+  {
+    std::vector<bool> absorbed(num_slots, false);
+    std::vector<bool> needs_raw(num_slots, false);
+    for (auto& step : execution_plan.steps) {
+      if (auto* xs = std::get_if<plan::RunXnnSubgraphStep>(&step)) {
+        for (auto s : xs->external_value_slots) {
+          needs_raw[s] = true;
+        }
+      } else if (auto* os = std::get_if<plan::RunOperatorStep>(&step)) {
+        auto consumed = os->op->consumed_constant_inputs();
+        for (size_t p = 0; p < os->input_slots.size(); p++) {
+          bool is_absorbed =
+              std::find(consumed.begin(), consumed.end(), p) != consumed.end();
+          (is_absorbed ? absorbed : needs_raw)[os->input_slots[p]] = true;
+        }
+      }
+    }
+    for (auto s : output_slots) {
+      needs_raw[s] = true;
+    }
+    for (size_t n = 0; n < graph.nodes.size(); n++) {
+      auto* cn = std::get_if<graph::ConstantNode>(&graph.nodes[n].value);
+      if (cn == nullptr) {
+        continue;
+      }
+      auto slot = graph.nodes[n].tag;
+      if (absorbed[slot] && !needs_raw[slot]) {
+        // Drop this graph's owning handle on the unpacked constant; its storage
+        // is freed once no other reference remains. The borrowed value-slot
+        // pointer is never read again (the op runs from the packed buffer).
+        cn->tensor.reset();
+      }
+    }
   }
 
   auto t4 = std::chrono::steady_clock::now();
@@ -335,6 +382,7 @@ runtime::Result<Executor> Executor::build(graph::Graph& graph) {
   }
 
   Executor exec;
+  exec.weight_cache = std::move(weight_cache);
   exec.input_specs = graph.input_specs;
   exec.input_slots = std::move(input_slots);
   exec.memory_plan = std::move(memory_plan);

@@ -44,6 +44,8 @@ target_include_directories(
 # Graph runtime unit tests.
 set(_graph_runtime_test_srcs
     runtime/test_quant_params.cpp
+    runtime/test_packed_weight_cache.cpp
+    runtime/test_xnn_weights_cache_adapter.cpp
     runtime/test_layout.cpp
     runtime/test_kai_ukernel.cpp
     runtime/test_layout_assignment.cpp

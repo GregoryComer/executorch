@@ -1,5 +1,6 @@
 #pragma once
 
+#include <executorch/backends/xnnpack/runtime/cache/packed_weight_cache.h>
 #include <executorch/backends/xnnpack/runtime/core/tensor.h>
 #include <executorch/backends/xnnpack/runtime/executor/arena.h>
 #include <executorch/backends/xnnpack/runtime/executor/shape_env.h>
@@ -18,6 +19,9 @@ struct Executor {
   // XNNPACK keeps pointers into unpacked constant data (e.g. PReLU slopes), so
   // this must outlive `plan`'s runtimes. Declared first => destroyed last.
   graph::Graph graph;
+  // Owns packed weights borrowed by in-tree operators (e.g. LinearInt4).
+  // Declared before `plan` so it outlives the operators that reference it.
+  cache::PackedWeightCache weight_cache;
   Arena arena;
   std::vector<graph::TensorSpec> input_specs;
   std::vector<plan::ValueSlot> input_slots;
